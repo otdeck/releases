@@ -1,0 +1,152 @@
+# Installs every Windows and Linux package of an OTDeck release on a clean
+# machine, checks the version, talks to otdeck-mcp, starts the app (no
+# licence: the Free plan) and uninstalls again. Runs on each published
+# release and by hand (Actions → Install smoke test). GitHub-hosted runners
+# only (free for this public repository); no secrets.
+#
+# No self-update job: Windows and Linux builds only read otdeck.com/release.txt
+# and link to the download page (app/internal/updates); they never download
+# or run an installer, so there is no update to drive. macOS (Sparkle) is
+# not tested here.
+name: Install smoke test
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release, e.g. 0.8.0 or v0.8.0 (empty: the latest release)"
+        required: false
+      from:
+        description: "Unused: Windows and Linux builds do not update themselves"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-smoke-${{ github.event.release.tag_name || inputs.version || 'latest' }}
+  cancel-in-progress: true
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.version }}
+  GH_TOKEN: ${{ github.token }}
+  # otdeck-mcp's tool count (app/internal/mcp); change it with a release that adds tools.
+  MCP_TOOLS: "17"
+
+jobs:
+  signature:
+    name: SHA256SUMS signature and checksums
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: .github/smoke }
+      - name: Download every file and check the signature and checksums
+        run: |
+          tag="${TAG:-$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
+          case "$tag" in v*) ;; *) tag="v$tag" ;; esac
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -D dl
+          cd dl
+          # The key is OTDeck's release key (otdeck.com/download#verify), kept
+          # here and not taken from the release, so a changed release fails.
+          base64 -d < SHA256SUMS.sig > /tmp/SHA256SUMS.sig.bin
+          openssl pkeyutl -verify -pubin -inkey ../.github/smoke/otdeck-release.pem -rawin -in SHA256SUMS -sigfile /tmp/SHA256SUMS.sig.bin
+          sha256sum -c SHA256SUMS
+          for f in *; do
+            case "$f" in SHA256SUMS|SHA256SUMS.sig) continue ;; esac
+            grep -q "  $f\$" SHA256SUMS || echo "::warning::$f is not in SHA256SUMS"
+          done
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: windows-latest }
+          - { arch: arm64, runner: windows-11-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: .github/smoke }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Download the installer and check its checksum
+        shell: bash
+        run: |
+          tag="${TAG:-$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
+          case "$tag" in v*) ;; *) tag="v$tag" ;; esac
+          echo "WANT=${tag#v}" >> "$GITHUB_ENV"
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "OTDeck-*-${{ matrix.arch }}-setup.exe" -p SHA256SUMS -D dl
+          cd dl && f=$(ls OTDeck-*-${{ matrix.arch }}-setup.exe) && grep " $f\$" SHA256SUMS | sha256sum -c -
+          echo "SETUP=$(cygpath -w "$PWD/$f")" >> "$GITHUB_ENV"
+      - name: Default folder - install, version, otdeck-mcp, start, uninstall
+        shell: pwsh
+        run: |
+          & .github/smoke/windows.ps1 -Setup $env:SETUP -Want $env:WANT -Tools $env:MCP_TOOLS -Shot "$env:RUNNER_TEMP\otdeck-windows-${{ matrix.arch }}.png"
+      - name: Cyrillic folder (C:\Программы\OTDeck) - the same
+        shell: pwsh
+        run: |
+          & .github/smoke/windows.ps1 -Setup $env:SETUP -Want $env:WANT -Tools $env:MCP_TOOLS -Shot "$env:RUNNER_TEMP\otdeck-windows-${{ matrix.arch }}-cyrillic.png" -Dir "C:\Программы\OTDeck"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-windows-${{ matrix.arch }}
+          path: ${{ runner.temp }}/otdeck-windows-*.png
+          if-no-files-found: ignore
+
+  linux:
+    name: Linux ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # GitHub's Ubuntu machines are real VMs with Ubuntu's AppArmor
+          # rules, so the package runs there as on a desktop.
+          - { id: deb-amd64-ubuntu, name: deb amd64 (Ubuntu 24.04), runner: ubuntu-24.04, image: "", pkg: "otdeck_*_amd64.deb" }
+          - { id: deb-arm64-ubuntu, name: deb arm64 (Ubuntu 24.04), runner: ubuntu-24.04-arm, image: "", pkg: "otdeck_*_arm64.deb" }
+          # Other distributions in a container that allows the user
+          # namespaces WebKit's sandbox (bubblewrap) needs.
+          - { id: deb-amd64-debian, name: deb amd64 (Debian 13), runner: ubuntu-24.04, image: "debian:13", pkg: "otdeck_*_amd64.deb" }
+          - { id: rpm-x86_64-fedora, name: rpm x86_64 (Fedora 42), runner: ubuntu-24.04, image: "fedora:42", pkg: "otdeck-*.x86_64.rpm" }
+          - { id: rpm-aarch64-fedora, name: rpm aarch64 (Fedora 42), runner: ubuntu-24.04-arm, image: "fedora:42", pkg: "otdeck-*.aarch64.rpm" }
+          - { id: tar-amd64-debian, name: tar.gz amd64 (Debian 13), runner: ubuntu-24.04, image: "debian:13", pkg: "otdeck-*-linux-amd64.tar.gz" }
+          - { id: tar-arm64-debian, name: tar.gz arm64 (Debian 13), runner: ubuntu-24.04-arm, image: "debian:13", pkg: "otdeck-*-linux-arm64.tar.gz" }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: .github/smoke }
+      - name: Download the package and check its checksum
+        run: |
+          tag="${TAG:-$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
+          case "$tag" in v*) ;; *) tag="v$tag" ;; esac
+          echo "WANT=${tag#v}" >> "$GITHUB_ENV"
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "${{ matrix.pkg }}" -p SHA256SUMS -D dl
+          cd dl && f=$(ls ${{ matrix.pkg }}) && grep " $f\$" SHA256SUMS | sha256sum -c -
+          echo "PKG=dl/$f" >> "$GITHUB_ENV"
+      - name: Install, start, talk to otdeck-mcp, remove (this machine)
+        if: matrix.image == ''
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          bash .github/smoke/linux.sh "$PKG" "$WANT" "$MCP_TOOLS" shots
+      - name: Install, start, talk to otdeck-mcp, remove (clean ${{ matrix.image }})
+        if: matrix.image != ''
+        run: |
+          # The container shares this Ubuntu kernel; Debian and Fedora
+          # kernels do not restrict unprivileged user namespaces.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          docker run --rm --privileged \
+            -v "$PWD:/w" -w /w ${{ matrix.image }} bash .github/smoke/linux.sh "$PKG" "$WANT" "$MCP_TOOLS" shots
+      - name: Name the screenshot
+        if: always()
+        run: if [ -f shots/otdeck-linux.png ]; then mv shots/otdeck-linux.png "shots/otdeck-${{ matrix.id }}.png"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-${{ matrix.id }}
+          path: shots/*.png
+          if-no-files-found: ignore
