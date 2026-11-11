@@ -52,7 +52,7 @@ if [ $kind = tar ]; then
 else
   app=/usr/bin/otdeck mcp=/usr/bin/otdeck-mcp
   test -f /usr/share/applications/otdeck.desktop
-  test -f /usr/share/icons/hicolor/1024x1024/apps/otdeck.png
+  for s in 16 32 48 64 128 256 512; do test -f /usr/share/icons/hicolor/${s}x${s}/apps/otdeck.png; done
 fi
 test -x "$app"
 test -x "$mcp"
