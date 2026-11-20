@@ -26,6 +26,10 @@ https://otdeck.com/download (all files with SHA-256), or the
 
 macOS with Homebrew: `brew install --cask aleksskoz/tap/otdeck`
 
+Windows from Microsoft Store (installs without SmartScreen warnings, updates itself):
+
+[![Get it from Microsoft](https://otdeck.com/badges/microsoft-store.svg)](https://apps.microsoft.com/detail/9PBR65914WKR)
+
 Free forever with one open connection; Pro $99 once, Team $149 per seat a
 year: https://otdeck.com/#pricing
 
