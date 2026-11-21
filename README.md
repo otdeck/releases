@@ -1,4 +1,4 @@
-# OTDeck: Modbus, OPC UA, MQTT and BACnet client with an MCP server
+# OTDeck: Modbus, OPC UA, MQTT, BACnet and M-Bus client with an MCP server
 
 Release files for [OTDeck](https://otdeck.com), a desktop workbench for the
 protocols of factories and buildings, on Windows, macOS and Linux (x64 and Arm64):
@@ -13,15 +13,19 @@ protocols of factories and buildings, on Windows, macOS and Linux (x64 and Arm64
 - **BACnet/IP and BACnet/SC client**: device discovery, objects, priority
   arrays, commanding with relinquish, alarms and event notifications with
   delivery diagnostics, EDE export.
+- **M-Bus master (wired, EN 13757)**: heat, water, gas and electricity meters
+  and heat cost allocators through an M-Bus gateway or a USB level converter;
+  primary scan, secondary search with collisions, decoded records with units,
+  polling and trends, new primary address (Pro).
 - **Commissioning**: a point checkout sheet walks an IO list point by point,
   with alarm tests and a commissioning report (Pro).
 - **Trends, watch rules and snapshots**: live trends for all protocols,
   warnings when a value leaves its range, compare a device with yesterday.
-- **MCP server** `otdeck-mcp` with 17 tools for Claude Desktop, Claude Code,
+- **MCP server** `otdeck-mcp` with 18 tools for Claude Desktop, Claude Code,
   Cursor, Codex, VS Code and other AI agents. Agents never see your
   passwords; every write they ask for waits for your Allow in OTDeck (Pro).
-- **Built-in simulator**: MQTT broker, Modbus TCP PLC, OPC UA server and
-  BACnet device on 127.0.0.1.
+- **Built-in simulator**: MQTT broker, Modbus TCP PLC, OPC UA server,
+  BACnet device and M-Bus gateway with five meters on 127.0.0.1.
 - Production connections start read-only; works offline with no account and
   no analytics; offline licence activation for air-gapped networks.
 
