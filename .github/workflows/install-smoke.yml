@@ -33,7 +33,7 @@ env:
   TAG: ${{ github.event.release.tag_name || inputs.version }}
   GH_TOKEN: ${{ github.token }}
   # otdeck-mcp's tool count (app/internal/mcp); change it with a release that adds tools.
-  MCP_TOOLS: "17"
+  MCP_TOOLS: "18"
 
 jobs:
   signature:
